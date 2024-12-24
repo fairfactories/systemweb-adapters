@@ -46,7 +46,6 @@ internal partial class RemoteAppSessionStateManager : ISessionManager
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Trace, Message = "Received {StatusCode} response committing remote session state")]
     private partial void LogCommitResponse(HttpStatusCode statusCode);
-
     public async Task<ISessionState> CreateAsync(HttpContextCore context, SessionAttribute metadata)
     {
         // If an existing remote session ID is present in the request, use its session ID.
@@ -72,22 +71,21 @@ internal partial class RemoteAppSessionStateManager : ISessionManager
 
     private async Task<ISessionState> GetSessionDataAsync(string? sessionId, bool readOnly, HttpContextCore callingContext, CancellationToken token)
     {
-        // The request message is manually disposed at a later time
+        // The request message is manually disposed at a later time test
 #pragma warning disable CA2000 // Dispose objects before losing scope
         var req = new HttpRequestMessage(HttpMethod.Get, _options.Path.Relative);
 #pragma warning restore CA2000 // Dispose objects before losing scope
-
         AddSessionCookieToHeader(req, sessionId);
         AddReadOnlyHeader(req, readOnly);
-
+        _logger.LogCritical("GetSessionDataAsync:session id is:" + sessionId);
         var response = await _backchannelClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
-
+        _logger.LogCritical("GetSessionDataAsync:response status code is:" + response.StatusCode);
         LogRetrieveResponse(response.StatusCode);
-
+        _logger.LogCritical("GetSessionDataAsync:retrieved the response:");
         response.EnsureSuccessStatusCode();
-
+        _logger.LogCritical("EnsureSuccessStatusCode completed:");
         var remoteSessionState = await _serializer.DeserializeAsync(await response.Content.ReadAsStreamAsync(token), token);
-
+        _logger.LogCritical("remoteSessionState deserialized:");
         if (remoteSessionState is null)
         {
             throw new InvalidOperationException("Could not retrieve remote session state");

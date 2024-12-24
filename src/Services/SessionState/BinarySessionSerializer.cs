@@ -8,8 +8,11 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+//using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using static System.Net.Mime.MediaTypeNames;
+
 
 namespace Microsoft.AspNetCore.SystemWebAdapters.SessionState.Serialization;
 
@@ -37,84 +40,112 @@ internal partial class BinarySessionSerializer : ISessionSerializer
 
     public void Write(ISessionState state, BinaryWriter writer)
     {
-        writer.Write(Version);
-        writer.Write(state.SessionID);
-
-        writer.Write(state.IsNewSession);
-        writer.Write(state.IsAbandoned);
-        writer.Write(state.IsReadOnly);
-
-        writer.Write7BitEncodedInt(state.Timeout);
-        writer.Write7BitEncodedInt(state.Count);
-
-        List<string>? unknownKeys = null;
-
-        foreach (var item in state.Keys)
+        try
         {
-            writer.Write(item);
+            string sessionId = state.SessionID;
+            writer.Write(Version);
+            writer.Write(sessionId);
+            //CustomLogger.Log("BinarySessionSerializer~Write session id is: " + sessionId, LogLevelCustom.Critical);
+            _logger.LogCritical("BinarySessionSerializer~Write session id is: " + sessionId);
+            writer.Write(state.IsNewSession);
+            writer.Write(state.IsAbandoned);
+            writer.Write(state.IsReadOnly);
+            writer.Write7BitEncodedInt(state.Timeout);
+            writer.Write7BitEncodedInt(state.Count);
 
-            if (_serializer.TrySerialize(item, state[item], out var result))
+            List<string>? unknownKeys = null;
+
+            // Use a copy of the Keys collection and associated values to avoid modification during iteration
+            var keyValuePairs = state.Keys.ToDictionary(key => key, key => state[key]);
+
+            foreach (var item in keyValuePairs)
+            {
+                writer.Write(item.Key);
+                //CustomLogger.Log("serialize from core2~ session id is: " + sessionId + " Key is: " + item, LogLevelCustom.Critical);
+                _logger.LogCritical("serialize from core~ session id is: " + sessionId + " Key is: " + item);
+                if (_serializer.TrySerialize(item.Key, item.Value, out var result))
                 {
+                    //CustomLogger.Log("serialize from core~ session id is: " + sessionId + " Key is: " + item + " result is: " + result.Length, LogLevelCustom.Critical);
+                    _logger.LogCritical("serialize from core~ session id is: " + sessionId + " Key is: " + item + " result is: " + result.Length);
                     writer.Write7BitEncodedInt(result.Length);
                     writer.Write(result);
                 }
                 else
                 {
-                    (unknownKeys ??= new()).Add(item);
+                    (unknownKeys ??= new()).Add(item.Key);
                     writer.Write7BitEncodedInt(0);
                 }
             }
 
-        if (unknownKeys is null)
-        {
-            writer.Write7BitEncodedInt(0);
-        }
-        else
-        {
-            writer.Write7BitEncodedInt(unknownKeys.Count);
-
-            foreach (var key in unknownKeys)
+            if (unknownKeys is null)
             {
-                LogSerialization(key);
-                writer.Write(key);
+                writer.Write7BitEncodedInt(0);
             }
-        }
-
-        if (unknownKeys is not null && _options.ThrowOnUnknownSessionKey)
-        {
-            throw new UnknownSessionKeyException(unknownKeys);
-        }
-    }
-
-    public ISessionState Read(BinaryReader reader)
-    {
-        if (reader is null)
-        {
-            throw new ArgumentNullException(nameof(reader));
-        }
-
-        if (reader.ReadByte() != Version)
-        {
-            throw new InvalidOperationException("Serialized session state has different version than expected");
-        }
-
-        var state = new BinaryReaderSerializedSessionState(reader, _serializer);
-
-        if (state.UnknownKeys is { Count: > 0 } unknownKeys)
-        {
-            foreach (var unknown in unknownKeys)
+            else
             {
-                LogDeserialization(unknown);
+                writer.Write7BitEncodedInt(unknownKeys.Count);
+
+                foreach (var key in unknownKeys)
+                {
+                    LogSerialization(key);
+                    writer.Write(key);
+                }
             }
 
-            if (_options.ThrowOnUnknownSessionKey)
+            if (unknownKeys is not null && _options.ThrowOnUnknownSessionKey)
             {
                 throw new UnknownSessionKeyException(unknownKeys);
             }
         }
-
-        return state;
+        catch (Exception ex)
+        {
+            CustomLogger.Log("BinarySessionSerializer write Exception: " + state.SessionID + " exception: " + ex.Message, LogLevelCustom.Critical);
+            _logger.LogCritical("BinarySessionSerializer write Exception: " + state.SessionID + " exception: " + ex.Message);
+        }
     }
+
+
+    public ISessionState Read(BinaryReader reader)
+    {
+        try
+        {
+            if (reader is null)
+            {
+                throw new ArgumentNullException(nameof(reader));
+            }
+
+            if (reader.ReadByte() != Version)
+            {
+                throw new InvalidOperationException("Serialized session state has different version than expected");
+            }
+            //CustomLogger.Log("BinarySessionSerializer~read method start", LogLevelCustom.Critical);
+            _logger.LogCritical("BinarySessionSerializer~read method start");
+
+            var state = new BinaryReaderSerializedSessionState(reader, _serializer, _logger);
+
+            if (state.UnknownKeys is { Count: > 0 } unknownKeys)
+            {
+                foreach (var unknown in unknownKeys)
+                {
+                    LogDeserialization(unknown);
+                }
+
+                if (_options.ThrowOnUnknownSessionKey)
+                {
+                    throw new UnknownSessionKeyException(unknownKeys);
+                }
+            }
+
+            return state;
+        }
+        catch (Exception ex)
+        {
+            CustomLogger.Log("BinarySessionSerializer Read main method Exception: ", LogLevelCustom.Critical);
+            _logger.LogCritical("BinarySessionSerializer Read main method Exception: " + ex.Message.ToString());
+            return null;
+        }
+    }
+
 
     public Task<ISessionState?> DeserializeAsync(Stream stream, CancellationToken token)
     {
@@ -134,44 +165,67 @@ internal partial class BinarySessionSerializer : ISessionSerializer
 
     private class BinaryReaderSerializedSessionState : ISessionState
     {
-        public BinaryReaderSerializedSessionState(BinaryReader reader, ISessionKeySerializer serializer)
+        private readonly ILogger<BinarySessionSerializer> _logger;
+        public BinaryReaderSerializedSessionState(BinaryReader reader, ISessionKeySerializer serializer, ILogger<BinarySessionSerializer> logger)
         {
-            SessionID = reader.ReadString();
-            IsNewSession = reader.ReadBoolean();
-            IsAbandoned = reader.ReadBoolean();
-            IsReadOnly = reader.ReadBoolean();
-            Timeout = reader.Read7BitEncodedInt();
-
-            var count = reader.Read7BitEncodedInt();
-
-            for (var index = count; index > 0; index--)
+            try
             {
-                var key = reader.ReadString();
-                var length = reader.Read7BitEncodedInt();
-                var bytes = reader.ReadBytes(length);
+                _logger = logger;
+                SessionID = reader.ReadString();
+                IsNewSession = reader.ReadBoolean();
+                IsAbandoned = reader.ReadBoolean();
+                IsReadOnly = reader.ReadBoolean();
+                Timeout = reader.Read7BitEncodedInt();
 
-                if (serializer.TryDeserialize(key, bytes, out var result))
+                var count = reader.Read7BitEncodedInt();
+
+                for (var index = count; index > 0; index--)
                 {
-                    if (result is not null)
+
+                    var key = reader.ReadString();
+                    var length = reader.Read7BitEncodedInt();
+                    var bytes = reader.ReadBytes(length);
+                    try
                     {
-                        this[key] = result;
+                        _logger.Log(LogLevel.Critical, "BinaryReaderSerializedSessionState read method session id is: " + SessionID + " Key is: " + key);
+                        if (serializer.TryDeserialize(key, bytes, out var result))
+                        {
+                            if (result is not null)
+                            {
+                                this[key] = result;
+                            }
+                        }
+                        else
+                        {
+                            (UnknownKeys ??= new()).Add(key);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        CustomLogger.Log("BinaryReaderSerializedSessionState loop error session id is: " + SessionID + " Key is " + Convert.ToString(key) + " exception is:" + ex.Message.ToString(), LogLevelCustom.Critical);
+                        _logger.LogCritical("BinaryReaderSerializedSessionState loop error session id is: " + SessionID + " Key is " + Convert.ToString(key) + " exception is:" + ex.Message.ToString());
+                    }
+
+
+                }
+
+                var unknown = reader.Read7BitEncodedInt();
+
+                if (unknown > 0)
+                {
+                    for (var index = unknown; index > 0; index--)
+                    {
+                        (UnknownKeys ??= new()).Add(reader.ReadString());
                     }
                 }
-                else
-                {
-                    (UnknownKeys ??= new()).Add(key);
-                }
             }
-
-            var unknown = reader.Read7BitEncodedInt();
-
-            if (unknown > 0)
+            catch (Exception ex)
             {
-                for (var index = unknown; index > 0; index--)
-                {
-                    (UnknownKeys ??= new()).Add(reader.ReadString());
-                }
+                CustomLogger.Log("BinaryReaderSerializedSessionState main class error session id is: " + SessionID + " exception is:" + ex.Message.ToString(), LogLevelCustom.Critical);
+                _logger.LogCritical("BinaryReaderSerializedSessionState main class error session id is: " + SessionID + " exception is:" + ex.Message.ToString());
             }
+
+
         }
 
         private Dictionary<string, object?>? _items;
@@ -213,3 +267,30 @@ internal partial class BinarySessionSerializer : ISessionSerializer
         }
     }
 }
+
+public static class CustomLogger
+{
+    private static readonly object LockObject = new object();
+    private static readonly string LogFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "logs", "log.txt");
+
+    public static void Log(string message, LogLevelCustom level)
+    {
+        string formattedMessage = $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} [{level}] {message}{Environment.NewLine}";
+
+        lock (LockObject)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogFilePath));
+            File.AppendAllText(LogFilePath, formattedMessage);
+        }
+    }
+}
+
+public enum LogLevelCustom
+{
+    Debug,
+    Information,
+    Warning,
+    Error,
+    Critical
+}
+
