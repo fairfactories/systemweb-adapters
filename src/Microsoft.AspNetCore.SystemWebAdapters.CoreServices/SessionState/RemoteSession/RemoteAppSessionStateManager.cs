@@ -77,15 +77,15 @@ internal partial class RemoteAppSessionStateManager : ISessionManager
 #pragma warning restore CA2000 // Dispose objects before losing scope
         AddSessionCookieToHeader(req, sessionId);
         AddReadOnlyHeader(req, readOnly);
-        _logger.LogCritical("GetSessionDataAsync:session id is:" + sessionId);
+        //_logger.LogCritical("GetSessionDataAsync:session id is:" + sessionId);
         var response = await _backchannelClient.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, token);
-        _logger.LogCritical("GetSessionDataAsync:response status code is:" + response.StatusCode);
+        //_logger.LogCritical("GetSessionDataAsync:response status code is:" + response.StatusCode);
         LogRetrieveResponse(response.StatusCode);
-        _logger.LogCritical("GetSessionDataAsync:retrieved the response:");
+        //_logger.LogCritical("GetSessionDataAsync:retrieved the response:");
         response.EnsureSuccessStatusCode();
-        _logger.LogCritical("EnsureSuccessStatusCode completed:");
+        //_logger.LogCritical("EnsureSuccessStatusCode completed:");
         var remoteSessionState = await _serializer.DeserializeAsync(await response.Content.ReadAsStreamAsync(token), token);
-        _logger.LogCritical("remoteSessionState deserialized:");
+        //_logger.LogCritical("remoteSessionState deserialized:");
         if (remoteSessionState is null)
         {
             throw new InvalidOperationException("Could not retrieve remote session state");

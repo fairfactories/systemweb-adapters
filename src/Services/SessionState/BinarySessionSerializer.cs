@@ -46,7 +46,7 @@ internal partial class BinarySessionSerializer : ISessionSerializer
             writer.Write(Version);
             writer.Write(sessionId);
             //CustomLogger.Log("BinarySessionSerializer~Write session id is: " + sessionId, LogLevelCustom.Critical);
-            _logger.LogCritical("BinarySessionSerializer~Write session id is: " + sessionId);
+            //_logger.LogCritical("BinarySessionSerializer~Write session id is: " + sessionId);
             writer.Write(state.IsNewSession);
             writer.Write(state.IsAbandoned);
             writer.Write(state.IsReadOnly);
@@ -62,11 +62,11 @@ internal partial class BinarySessionSerializer : ISessionSerializer
             {
                 writer.Write(item.Key);
                 //CustomLogger.Log("serialize from core2~ session id is: " + sessionId + " Key is: " + item, LogLevelCustom.Critical);
-                _logger.LogCritical("serialize from core~ session id is: " + sessionId + " Key is: " + item);
+                //_logger.LogCritical("serialize from core~ session id is: " + sessionId + " Key is: " + item);
                 if (_serializer.TrySerialize(item.Key, item.Value, out var result))
                 {
                     //CustomLogger.Log("serialize from core~ session id is: " + sessionId + " Key is: " + item + " result is: " + result.Length, LogLevelCustom.Critical);
-                    _logger.LogCritical("serialize from core~ session id is: " + sessionId + " Key is: " + item + " result is: " + result.Length);
+                    //_logger.LogCritical("serialize from core~ session id is: " + sessionId + " Key is: " + item + " result is: " + result.Length);
                     writer.Write7BitEncodedInt(result.Length);
                     writer.Write(result);
                 }
@@ -119,7 +119,7 @@ internal partial class BinarySessionSerializer : ISessionSerializer
                 throw new InvalidOperationException("Serialized session state has different version than expected");
             }
             //CustomLogger.Log("BinarySessionSerializer~read method start", LogLevelCustom.Critical);
-            _logger.LogCritical("BinarySessionSerializer~read method start");
+            //_logger.LogCritical("BinarySessionSerializer~read method start");
 
             var state = new BinaryReaderSerializedSessionState(reader, _serializer, _logger);
 
@@ -187,7 +187,7 @@ internal partial class BinarySessionSerializer : ISessionSerializer
                     var bytes = reader.ReadBytes(length);
                     try
                     {
-                        _logger.Log(LogLevel.Critical, "BinaryReaderSerializedSessionState read method session id is: " + SessionID + " Key is: " + key);
+                        //_logger.Log(LogLevel.Critical, "BinaryReaderSerializedSessionState read method session id is: " + SessionID + " Key is: " + key);
                         if (serializer.TryDeserialize(key, bytes, out var result))
                         {
                             if (result is not null)
